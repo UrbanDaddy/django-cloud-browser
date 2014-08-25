@@ -85,6 +85,37 @@ INSTALLED_APPS = (
     'cloud_browser',
 )
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': "[%(asctime)s] %(levelname)s \
+                      [%(name)s:%(lineno)s] %(message)s",
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+    },
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse'
+        }
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'cloud_browser.views': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    }
+}
+
 # EXAMPLE: Serve up the "/usr/share" directory.
 CLOUD_BROWSER_DATASTORE = "Filesystem"
 CLOUD_BROWSER_FILESYSTEM_ROOT = "/usr/share/doc"
