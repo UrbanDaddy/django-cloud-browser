@@ -122,6 +122,7 @@ def check():
     """Run all checkers."""
     pep8()
     pylint()
+    test()
 
 
 ###############################################################################
@@ -179,3 +180,7 @@ def syncdb(proj_settings=PROJ_SETTINGS):
 def run_server(addr="127.0.0.1:8000", proj_settings=PROJ_SETTINGS):
     """Run Django dev. server."""
     _manage("runserver", addr, proj_settings)
+
+
+def test(test_target="cloud_browser", proj_settings=PROJ_SETTINGS):
+    _manage("test", test_target, proj_settings)
