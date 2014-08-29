@@ -1,16 +1,67 @@
 """Cloud browser views."""
+from urlparse import urlparse
+import logging
+
+from django.contrib import messages
 from django.http import HttpResponse, Http404
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render, redirect
 from django.utils.importlib import import_module
+from django.views.generic.base import View
+import django.core.urlresolvers
 
 from cloud_browser.app_settings import settings
 from cloud_browser.cloud import get_connection, get_connection_cls, errors
-from cloud_browser.common import get_int, \
-    path_parts, path_join, path_yield, relpath
-
+from cloud_browser.common import SEP, ROOT, get_int, basename, \
+    get_wd_path, path_parts, path_join, path_join_sep, path_yield, relpath
 
 MAX_LIMIT = get_connection_cls().cont_cls.max_list
+LOGGER = logging.getLogger(__name__)
+
+
+def get_container_by_name(container_name):
+    """Get the container object by given container_name.
+
+    :param container_name: A string.
+
+    :return: container. An instance of a container object, inherited from
+        the abstract class CloudContainer.
+    """
+    # code is from broswer view
+    container_path, _ = path_parts(container_name)
+    conn = get_connection()
+    try:
+        container = conn.get_container(container_path)
+    except errors.NoContainerException:
+        raise Http404("No container at: %s" % container_path)
+    except errors.NotPermittedException:
+        raise Http404("Access denied for container at: %s" % container_path)
+
+    return container
+
+
+def browser_redirect(container, redirect_directory, permanent=False):
+    """Redirect to an existing directory page of 'cloud_browser_browser' view.
+
+    :param container: An instance of a container object, inherited from
+        the abstract class CloudContainer.
+    :param redirect_directory: A string indicating an directory path name.
+    :param permanent: A boolean indicating it is an permanent redirect or
+        temporary redirect, defaults to temporary.
+
+    :return: If redirect_direcotry exists, redirect to given directory,
+        otherwise to ROOT directory.
+    """
+    if redirect_directory != ROOT:
+        try:
+            container.has_directory(redirect_directory)
+        except errors.NoObjectException:
+            return redirect("cloud_browser_browser",
+                            path=container.name,
+                            permanent=permanent)
+
+    return redirect("cloud_browser_browser",
+                    path=path_join(container.name, redirect_directory),
+                    permanent=permanent)
 
 
 def settings_view_decorator(function):
@@ -91,7 +142,9 @@ def browser(request, path='', template="cloud_browser/browser.html"):
     marker_part = None
     container = None
     objects = None
-    if container_path != '':
+    upload_form = None
+    key_prefix = ''
+    if container_path != ROOT:
         # Find marked container from list.
         cont_eq = lambda c: c.name == container_path
         cont_list = list(islice(ifilter(cont_eq, containers), 1))
@@ -100,7 +153,15 @@ def browser(request, path='', template="cloud_browser/browser.html"):
 
         # Q2: Get objects for instant list, plus one to check "next".
         container = cont_list[0]
-        objects = container.get_objects(object_path, marker, limit+1)
+        try:
+            objects = container.get_objects(object_path, marker, limit+1)
+        except (errors.StorageResponseException,
+                errors.ClientException) as error:
+            LOGGER.warning(
+                "Unable to get objects from container {}: {}".format(
+                    container.name, error))
+            return redirect("cloud_browser_index")
+
         marker = None
 
         # If over limit, strip last item and set marker.
@@ -109,18 +170,59 @@ def browser(request, path='', template="cloud_browser/browser.html"):
             marker = objects[-1].name
             marker_part = relpath(marker, object_path)
 
-    return render_to_response(template,
-                              {'path': path,
-                               'marker': marker,
-                               'marker_part': marker_part,
-                               'limit': limit,
-                               'breadcrumbs': _breadcrumbs(path),
-                               'container_path': container_path,
-                               'containers': containers,
-                               'container': container,
-                               'object_path': object_path,
-                               'objects': objects},
-                              context_instance=RequestContext(request))
+        key_prefix = path[len(container.name)+1:]
+
+    if container:
+        key_prefix = key_prefix.rstrip(SEP) + SEP if key_prefix else key_prefix
+        # Upload form needs the full url, so we hard code it here. It consists
+        # of public domain and upload url. For example:
+        # request.build_absolute_uri() returns:
+        #   "http://mydomain.com/cb/browser/container/foo".
+        # urlparse(uri).scheme and urlparse(uri).netloc return:
+        #   "http://" and "mydomain.com" respectively.
+        # We can dynamically get the public domain here. Appending the upload
+        # view full path, full url is obtained.
+        parse_result = urlparse(request.build_absolute_uri())
+        success_action_redirect = "{}://{}{}".format(
+            parse_result.scheme,
+            parse_result.netloc,
+            django.core.urlresolvers.reverse('upload'),
+        )
+        # I only implement the AWS upload form here. Backend datastores
+        # specify their own upload form fields, and the *args, **kwargs of
+        # get_upload_form() methods vary, so corresponding upload method is
+        # called here, except "Filesystem".
+        datastore = settings.CLOUD_BROWSER_DATASTORE
+        if datastore == "AWS":
+            upload_form = conn.get_upload_form(
+                container_name=container.name,
+                key_prefix=key_prefix,
+                success_action_redirect=success_action_redirect,
+                acl="public-read",
+                username=request.user.username,
+            )
+        elif datastore == "Google":
+            upload_form = conn.get_upload_form()
+        elif datastore == "Rackspace":
+            upload_form = conn.get_upload_form()
+
+        objects = container.filter_objects(objects)
+
+    return render(request, template,
+                  {'path': path,
+                   'marker': marker,
+                   'marker_part': marker_part,
+                   'limit': limit,
+                   'breadcrumbs': _breadcrumbs(path),
+                   'container_path': container_path,
+                   'containers': containers,
+                   'container': container,
+                   'object_path': object_path,
+                   'objects': objects,
+                   'upload_form': upload_form,
+                   'mkdir_action': django.core.urlresolvers.reverse('mkdir'),
+                   'delete_action': django.core.urlresolvers.reverse('delete'),
+                   'wd_path': key_prefix})
 
 
 @settings_view_decorator
@@ -152,3 +254,269 @@ def document(_, path=''):
         response['Content-Encoding'] = encoding
 
     return response
+
+
+class UploadFileView(View):
+
+    # pylint: disable=no-self-use, unused-argument
+    def get(self, request, *args, **kwargs):
+
+        src_path = request.GET['key']
+        container_name = request.GET['bucket']
+
+        container = get_container_by_name(container_name)
+
+        messages.add_message(
+            request, messages.SUCCESS,
+            "'{}' uploaded".format(src_path))
+
+        return browser_redirect(container, get_wd_path(src_path))
+
+
+class DeleteView(View):
+
+    # pylint: disable=no-self-use, unused-argument
+    def post(self, request, *args, **kwargs):
+        container_name = request.POST['container_name']
+        src_path = request.POST['src_path']
+        is_file = request.POST['is_file'] == "True" or False
+
+        container = get_container_by_name(container_name)
+
+        try:
+            container.delete(src_path, is_file)
+            messages.add_message(
+                request, messages.SUCCESS,
+                "'{}' deleted.".format(src_path))
+        except (errors.StorageResponseException,
+                errors.ClientException) as error:
+            LOGGER.warning("Unable to delete '{}': {}".format(src_path, error))
+        except errors.NoObjectException as error:
+            LOGGER.warning(error)
+
+        return browser_redirect(container, get_wd_path(src_path))
+
+
+class MkdirView(View):
+
+    # pylint: disable=no-self-use, unused-argument
+    def post(self, request, *args, **kwargs):
+        container_name = request.POST['container_name']
+        wd_path = request.POST['wd_path']
+        dir_basename = request.POST['dir_basename']
+
+        container = get_container_by_name(container_name)
+
+        # Check current directory exists or not.
+        if wd_path != ROOT:
+            try:
+                container.has_directory(wd_path)
+            except errors.NoObjectException:
+                messages.add_message(
+                    request, messages.WARNING,
+                    "'{}' does not exist.".format(wd_path))
+                return browser_redirect(container, ROOT)
+
+        # Check the correctness of the new directory name.
+        if not container.is_safe_basename(dir_basename):
+            messages.add_message(
+                request, messages.WARNING,
+                "Only alphanumeric characters and special characters: \
+                {} are allowed in file and directory names.".format(
+                container.get_safe_special_characters()))
+            return browser_redirect(container, wd_path)
+
+        # Check new directory object exists or not.
+        try:
+            if container.has_directory(
+                    path_join_sep(wd_path, dir_basename)):
+                messages.add_message(
+                    request, messages.WARNING,
+                    "'{}' existed.".format(dir_basename))
+            return browser_redirect(container, wd_path)
+        except errors.NoObjectException:
+            pass
+
+        try:
+            container.mkdir(path_join_sep(wd_path, dir_basename),
+                            username=request.user.username)
+            messages.add_message(
+                request, messages.SUCCESS,
+                "Directory '{}' created.".format(dir_basename))
+        except (errors.StorageResponseException,
+                errors.ClientException) as error:
+            messages.add_message(
+                request, messages.WARNING,
+                "Unable to create the directory '{}': {}.".format(
+                    dir_basename, error))
+            LOGGER.warning(
+                "Unable to create the directory '{}': {}.".format(
+                    dir_basename, error))
+
+        return browser_redirect(container, wd_path)
+
+
+class RenameView(View):
+
+    # pylint: disable=no-self-use
+    def get(self, request, template="cloud_browser/rename.html"):
+        container_name = request.GET['container_name']
+        src_path = request.GET['src_path']
+        wd_path = request.GET['wd_path']
+        is_file = request.GET['is_file'] == "True" or False
+
+        # Check src object exists or not.
+        container = get_container_by_name(container_name)
+
+        try:
+            if is_file:
+                container.get_object(src_path)
+            else:
+                container.has_directory(src_path)
+        except errors.NoObjectException:
+            messages.add_message(
+                request, messages.WARNING,
+                "'{}' does not exist.".format(src_path))
+            return browser_redirect(container, wd_path)
+
+        return render(request, template,
+                      {'container_name': container_name,
+                       'src_path': src_path,
+                       'src_basename': basename(src_path),
+                       'is_file': is_file,
+                       'wd_path': wd_path,
+                       'rename_action':
+                       django.core.urlresolvers.reverse('rename')})
+
+    # pylint: disable=no-self-use, unused-argument
+    def post(self, request, *args, **kwargs):
+        container_name = request.POST['container_name']
+        new_basename = request.POST['new_basename']
+        src_path = request.POST['src_path']
+        wd_path = request.POST['wd_path']
+        is_file = request.POST['is_file'] == "True" or False
+
+        container = get_container_by_name(container_name)
+
+        # Check the correctness of the new object name.
+        if container.is_safe_basename(new_basename) is False:
+            messages.add_message(
+                request, messages.WARNING,
+                "Only alphanumeric characters and special characters: \
+                {} are allowed in file and directory names.".format(
+                container.get_safe_special_characters()))
+            return browser_redirect(container, wd_path)
+
+        # Check new object name exists or not.
+        try:
+            path = path_join(wd_path, new_basename)
+            if ((is_file and container.get_object(path)) or
+                    container.has_directory(path)):
+                messages.add_message(
+                    request, messages.WARNING,
+                    "'{}' existed.".format(
+                        path_join(wd_path, new_basename)))
+                return browser_redirect(container, wd_path)
+        except errors.NoObjectException:
+            pass
+
+        try:
+            container.rename(wd_path, src_path, new_basename, is_file)
+            messages.add_message(
+                request, messages.SUCCESS,
+                "'{}' was renamed as '{}'.".format(
+                    src_path, path_join(wd_path, new_basename)))
+        except errors.NoObjectException as error:
+            messages.add_message(
+                request, messages.WARNING,
+                "'{}' does not exist.".format(src_path))
+            LOGGER.warning(
+                "Unable to rename '{}': {}.".format(src_path, error))
+        except (errors.StorageResponseException,
+                errors.ClientException) as error:
+            LOGGER.warning(
+                "Unable to rename '{}': {}.".format(src_path, error))
+
+        return browser_redirect(container, wd_path)
+
+
+class MoveFileView(View):
+
+    # pylint: disable=no-self-use, unused-argument
+    def get(self, request, template="cloud_browser/move.html"):
+        container_name = request.GET['container_name']
+        src_path = request.GET['src_path']
+        wd_path = request.GET['wd_path']
+
+        container = get_container_by_name(container_name)
+
+        # Check src object exists or not.
+        if wd_path != ROOT:
+            try:
+                container.has_directory(wd_path)
+            except errors.NoObjectException:
+                messages.add_message(
+                    request, messages.WARNING,
+                    "'{}' does not exist.".format(src_path))
+                return browser_redirect(container, wd_path)
+
+        # Check if only ROOT directory in container.
+        all_dirs_paths = container.get_directories_paths()
+        if len(all_dirs_paths) == 1:
+            messages.add_message(
+                request, messages.WARNING,
+                "Please create a directory.")
+            return browser_redirect(container, wd_path)
+
+        # The select menu shows all directories except the working directory.
+        all_dirs_paths.remove(wd_path)
+
+        return render(request, template,
+                      {'container_name': container_name,
+                       'src_path': src_path,
+                       'wd_path': wd_path,
+                       'all_dirs_paths': all_dirs_paths,
+                       'move_action':
+                       django.core.urlresolvers.reverse('move')})
+
+    # pylint: disable=no-self-use, unused-argument
+    def post(self, request, *args, **kwargs):
+        container_name = request.POST['container_name']
+        target_dir_path = request.POST['target_dir_path']
+        src_path = request.POST['src_path']
+        wd_path = request.POST['wd_path']
+
+        container = get_container_by_name(container_name)
+
+        #Check new object (target_dir_path + src_basename) exist or not.
+        try:
+            if container.get_object(path_join(target_dir_path,
+                                              basename(src_path))):
+                messages.add_message(
+                    request, messages.WARNING,
+                    "'{}' has file '{}' .".format(
+                        target_dir_path, basename(src_path)))
+                return browser_redirect(container, wd_path)
+        except errors.NoObjectException:
+            pass
+
+        try:
+            container.move(src_path, target_dir_path)
+            messages.add_message(
+                request, messages.SUCCESS,
+                "'{}' was moved to '{}'.".format(
+                    src_path, target_dir_path))
+        except errors.NoObjectException as error:
+            messages.add_message(
+                request, messages.WARNING,
+                "'{}' does not exist.".format(src_path))
+            LOGGER.warning(
+                "Unable to move file '{}': {}.".format(
+                    src_path, error))
+        except (errors.StorageResponseException,
+                errors.ClientException) as error:
+            LOGGER.warning(
+                "Unable to move file '{}': {}.".format(
+                    src_path, error))
+
+        return browser_redirect(container, wd_path)

@@ -35,6 +35,7 @@ class CloudObject(object):
         self.content_encoding = kwargs.get('content_encoding', '')
         self.last_modified = kwargs.get('last_modified', None)
         self.type = kwargs.get('obj_type', self.type_cls.FILE)
+        self.modified_by = None
         self.__native = None
 
     @property
@@ -123,6 +124,13 @@ class CloudContainer(object):
 
         return self.__native
 
+    def get_safe_special_characters(self):
+        """Object name safe characters.
+
+        :rtype: ``str``
+        """
+        raise NotImplementedError
+
     def _get_container(self):
         """Return native container object."""
         raise NotImplementedError
@@ -134,6 +142,70 @@ class CloudContainer(object):
 
     def get_object(self, path):
         """Get single object."""
+        raise NotImplementedError
+
+    def has_directory(self, path):
+        """Check directory path exists or not."""
+        raise NotImplementedError
+
+    def get_directories_paths(self):
+        """Get all the directories in the given container.
+
+        :rtype: ``list[str]``
+        """
+        raise NotImplementedError
+
+    def filter_objects(self, objects):
+        """Filter NoneType objects, or the invalid objects specific for the
+        backend datastore. For example, key name "/foo/bar" is invalid for
+        Amazon S3. This method can also be used to filter the objects depending
+        on the user-defined requirements.
+
+        :return: A list of instances of actual objects, inheritaed from
+            abstract class CloudObject.
+        """
+        raise NotImplementedError
+
+    def is_safe_basename(self, base_name):
+        """Verifies that the base_name string path contains only safe
+        characters.
+
+        :rtype: ``bool``
+        """
+        raise NotImplementedError
+
+    def mkdir(self, dir_path, username=None):
+        """Create a new subdirectory under dir_path.
+
+        :raises: :class:`StorageResponseException`
+        :raises: :class:`ClientException`
+        """
+        raise NotImplementedError
+
+    def delete(self, src_path, is_file):
+        """If src_path is a file, delete it. If it's a directory, delete all
+        paths under it and itself.
+
+        :raises: :class:`StorageResponseException`
+        :raises: :class:`ClientException`
+        """
+        raise NotImplementedError
+
+    def rename(self, parent_dir_path, src_path, new_basename, is_file):
+        """If src_path is a file, rename it. If it's a directory, rename all
+        paths under it and itself.
+
+        :raises: :class:`StorageResponseException`
+        :raises: :class:`ClientException`
+        """
+        raise NotImplementedError
+
+    def move(self, src_file_path, target_dir_path):
+        """Move the file to the target directory.
+
+        :raises: :class:`StorageResponseException`
+        :raises: :class:`ClientException`
+        """
         raise NotImplementedError
 
 
@@ -181,4 +253,13 @@ class CloudConnection(object):
 
     def _get_container(self, path):
         """Return single container."""
+        raise NotImplementedError
+
+    def get_upload_form(self, *args, **kwargs):
+        """Return html format upload form.
+
+        Uploading an object requires the cloud account and secert key,
+        which are class members of the CloudConnection class, so the
+        get_upload_form method is put here.
+        """
         raise NotImplementedError

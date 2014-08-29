@@ -7,9 +7,11 @@
 
 .. _cloudfiles: https://github.com/rackspace/python-cloudfiles
 """
+
 from cloud_browser.app_settings import settings
 from cloud_browser.cloud import errors, base
 from cloud_browser.common import SEP, check_version, requires, dt_from_header
+
 
 ###############################################################################
 # Constants / Conditional Imports
@@ -28,6 +30,9 @@ except ImportError:
     cloudfiles = None  # pylint: disable=C0103
 
 
+# Disable pylint error for the methods are abstract in class 'CloudContainer'
+# but is not overridden.
+# pylint: disable=abstract-method
 ###############################################################################
 # Classes
 ###############################################################################

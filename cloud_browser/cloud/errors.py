@@ -28,6 +28,7 @@ class NoObjectException(CloudException):
     """No storage object found."""
     pass
 
+
 class StorageResponseException(CloudException):
     """General Server Error, includes StandardError, response error, etc."""
     pass

@@ -1,8 +1,11 @@
 """File-system datastore."""
 from __future__ import with_statement
 
+import errno
 import os
 import re
+import shutil
+import sys
 
 from cloud_browser.app_settings import settings
 from cloud_browser.cloud import errors, base
@@ -25,9 +28,31 @@ def is_dir(path):
     return not_dot(path) and os.path.isdir(path)
 
 
+# Disable pylint error for the methods are abstract in class 'CloudContainer'
+# but is not overridden.
+# pylint: disable=abstract-method
 ###############################################################################
 # Classes
 ###############################################################################
+def fs_server_client_error_wrapper(operation):  # pylint: disable=invalid-name
+    """Exception wrapper for catching OSError and NoObjectException."""
+
+    def wrapped(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        except OSError as error:
+            if error.errno == errno.ENOENT:
+                raise errors.NoObjectException, \
+                    errors.NoObjectException(error), \
+                    sys.exc_info()[2]
+            else:
+                raise errors.StorageResponseException, \
+                    errors.StorageResponseException(error), \
+                    sys.exc_info()[2]
+
+    return wrapped
+
+
 class FilesystemContainerWrapper(errors.CloudExceptionWrapper):
     """Exception translator."""
     translations = {
@@ -110,6 +135,14 @@ class FilesystemContainer(base.CloudContainer):
         """Get single object."""
         return self.obj_cls.from_path(self, path)
 
+    def has_directory(self, path):
+        """Check the directory exists or not."""
+        full_path = os.path.join(self.base_path, path)
+        if os.path.exists(full_path.rstrip(SEP)) is False:
+            raise errors.NoObjectException
+
+        return True
+
     @property
     def base_path(self):
         """Base absolute path of container."""
@@ -121,6 +154,92 @@ class FilesystemContainer(base.CloudContainer):
         path = path.strip(SEP)
         full_path = os.path.join(conn.abs_root, path)
         return cls(conn, path, 0, os.path.getsize(full_path))
+
+    def get_safe_special_characters(self):
+        """Object name safe characters.
+
+        :rtype: ``str``
+        """
+
+        return "!\-_.*'()"  # pylint: disable=anomalous-backslash-in-string
+
+    def _get_full_path(self, path):
+        """Get full path in filesystem, easy for file operations."""
+        return os.path.join(self.base_path, path).rstrip(SEP)
+
+    @fs_server_client_error_wrapper
+    def get_directories_paths(self):
+        """Get all the directories paths in the given container. Returns the
+        relative path.  """
+        dirs_paths = ['']
+
+        for path in os.walk(self.base_path):
+            if path[0][len(self.base_path):]:
+                dirs_paths.append(
+                    path[0][len(self.base_path):].strip(SEP) + SEP)
+
+        return dirs_paths
+
+    def filter_objects(self, objects):
+        """Filter NoneType objects or some invalid objects."""
+        return objects
+
+    def is_safe_basename(self, base_name):
+        """Verifies that the base_name string path contains only safe
+        characters.
+
+        :rtype: ``bool``
+        """
+        # Space is a valid character
+        # pylint: disable=anomalous-backslash-in-string
+        if re.match("[a-zA-Z0-9!\-_.*'() ]+$", base_name):
+            return True
+
+        return False
+
+    @fs_server_client_error_wrapper
+    def mkdir(self, dir_path, username=None):
+        """Create a new subdirectory under dir_path."""
+        full_path = self._get_full_path(dir_path)
+        if not os.path.exists(full_path):
+            os.mkdir(full_path)
+
+        return self.obj_cls.from_path(self, dir_path)
+
+    @fs_server_client_error_wrapper
+    def delete(self, src_path, is_file):
+        """If src_path is a file, rename it. If it's a directory, rename all
+        paths under it and itself.
+        """
+        if is_file:
+            os.remove(self._get_full_path(src_path))
+        else:
+            shutil.rmtree(self._get_full_path(src_path))
+
+    @fs_server_client_error_wrapper
+    def rename(self, parent_dir_path, src_path, new_basename, is_file):
+        """If src_path is a file, rename it. If it's a directory, rename all
+        paths under it and itself.
+        """
+        full_src_path = self._get_full_path(src_path)
+        full_new_path = self._get_full_path(
+            "{}{}".format(parent_dir_path, new_basename))
+
+        if is_file:
+            os.rename(full_src_path, full_new_path)
+        else:
+            os.renames(full_src_path, full_new_path)
+
+    @fs_server_client_error_wrapper
+    def move(self, src_file_path, target_dir_path):
+        """Move the file to the target directory."""
+        os.rename(
+            self._get_full_path(src_file_path),
+            self._get_full_path(os.path.join(
+                target_dir_path,
+                os.path.basename(src_file_path))
+            )
+        )
 
 
 class FilesystemConnection(base.CloudConnection):
