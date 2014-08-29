@@ -15,6 +15,8 @@ from django.core.exceptions import ImproperlyConfigured
 SEP = "/"
 #: Parent path phrase.
 PARENT = ".."
+#: ROOT directory.
+ROOT = ""
 
 
 ###############################################################################
@@ -143,6 +145,11 @@ def basename(path):
     return base_path[sep_ind+1:]
 
 
+def get_wd_path(path):
+    """Working directory path."""
+    return path[:-len(basename(path))]
+
+
 def path_parts(path):
     """Split path into container, object.
 
@@ -176,7 +183,13 @@ def path_list(path):
 
 def path_join(*args):
     """Join path parts to single path."""
-    return SEP.join((x for x in args if x not in (None, ''))).strip(SEP)
+    return SEP.join((x.rstrip(SEP)
+                    for x in args if x not in (None, ''))).strip(SEP)
+
+
+def path_join_sep(*args):
+    """Join path parts to single path."""
+    return SEP.join((x.rstrip(SEP) for x in args if x not in (None, ''))) + SEP
 
 
 def relpath(path, start):

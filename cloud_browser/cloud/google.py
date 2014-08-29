@@ -24,6 +24,9 @@ except ImportError:
     boto = None  # pylint: disable=C0103
 
 
+# Disable pylint error for the methods are abstract in class 'CloudContainer'
+# but is not overridden.
+# pylint: disable=abstract-method
 ###############################################################################
 # Classes
 ###############################################################################

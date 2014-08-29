@@ -1,6 +1,7 @@
 Django==1.5.8
 Fabric==1.4.3
-boto==2.6.0
+boto==2.32.1
+mock==1.0.1
 distribute==0.6.36
 logilab-astng==0.24.1
 logilab-common==0.58.1

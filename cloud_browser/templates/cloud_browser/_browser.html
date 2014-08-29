@@ -26,6 +26,19 @@
 
 <div id="cloud-browser-objects">
 <h2>Objects</h2>
+{% if container%}
+    {% if upload_form %}
+        {{ upload_form | safe }}
+    {% endif %}
+    <form method="post" action="{{ mkdir_action }}">
+        {% csrf_token %}
+        <input type="hidden" name="container_name" value="{{ container.name }}">
+        <input type="hidden" name="wd_path" value="{{wd_path}}">
+        <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/folder-new.png' %}" alt="Submit" align="middle">
+        <input type="text" name="dir_basename" size=20 value="New Directory">
+    </form>
+{% endif %}
+
 {% if objects %}
 <table id="cloud-browser-objects-table">
   <thead>
@@ -34,8 +47,12 @@
       <th>Name</th>
       <th>Content Type</th>
       <th>Encoding</th>
+      <th>Modified by</th>
       <th>Size (Bytes)</th>
       <th>Date</th>
+      <th>Delete</th>
+      <th>Rename</th>
+      <th>Move to ...</th>
     </tr>
   </thead>
   <tbody>
@@ -65,6 +82,11 @@
             {% else %}--{% endif %}
         </td>
         <td>
+            {% if obj.modified_by %}
+                {{ obj.modified_by }}
+            {% else %}--{% endif %}
+        </td>
+        <td>
             {% if obj.is_file or obj.size > 0 %}
                 {{ obj.size|filesizeformat }}
             {% else %}--{% endif %}
@@ -74,12 +96,42 @@
                 {{ obj.last_modified|date:'DATETIME_FORMAT' }}
             {% else %}--{% endif %}
         </td>
+        <td><center>
+            <form id="cloud-browser-delete" class="cloud-browser-form" method="POST" action="{{ delete_action }}" data-confirm="Are you sure to delete this?">
+                {% csrf_token %}
+                <input type="hidden" name="container_name" value="{{ container.name }}">
+                <input type="hidden" name="src_path" value="{{ obj.name }}">
+                <input type="hidden" name="is_file" value="{{ obj.is_file }}">
+                <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/edit-delete.png' %}" alt="Submit">
+            </form>
+        </center></td>
+        <td><center>
+            <form id="cloud-browser-rename" class="cloud-browser-form" method="get" action={% url 'rename' %} >
+                <input type="hidden" name="container_name" value="{{ container.name }}">
+                <input type="hidden" name="src_path" value="{{ obj.name }}">
+                <input type="hidden" name="is_file" value="{{ obj.is_file }}">
+                <input type="hidden" name="wd_path" value="{{ wd_path }}">
+                <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/edit-copy.png' %}" alt="Submit" width="16" height="16">
+            </form>
+        </center></td>
+        <td><center>
+            {% if obj.is_file %}
+                <form id="cloud-browser-move" class="cloud-browser-form" method="get" action={% url 'move' %}>
+                    <input type="hidden" name="container_name" value="{{ container.name }}">
+                    <input type="hidden" name="src_path" value="{{ obj.name }}">
+                    <input type="hidden" name="is_file" value="{{ obj.is_file }}">
+                    <input type="hidden" name="wd_path" value="{{ wd_path }}">
+                    <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/format-indent-more.png' %}" alt="Submit" width="16" height="16">
+                </form>
+            {% else %}--{% endif %}
+        </center></td>
       </tr>
     {% endfor %}
   </tbody>
+
   <tfoot>
     <tr>
-      <td colspan="6">
+      <td colspan="10">
         {% if marker_part %}
         <form id="cloud-browser-next" class="cloud-browser-form"
           action="{% url "cloud_browser_browser" path|urlencode %}" method="post">
@@ -118,4 +170,12 @@
 {% endif %}
 </div>
 </div>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script>
+$(function() {
+    $("form.cloud-browser-form[data-confirm]").on('click Submit', function(){
+        return confirm($(this).data("confirm"));
+    });
+});
+</script>
 {% endblock %}
