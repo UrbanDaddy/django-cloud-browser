@@ -205,6 +205,9 @@ class Settings(object):
 
         # Static media root.
         'CLOUD_BROWSER_STATIC_MEDIA_DIR': Setting(),
+
+        # Read only mode.
+        'CLOUD_BROWSER_READ_ONLY': BoolSetting(default=True),
     }
 
     def __init__(self):

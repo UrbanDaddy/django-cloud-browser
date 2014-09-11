@@ -143,6 +143,7 @@ def browser(request, path='', template="cloud_browser/browser.html"):
     container = None
     objects = None
     upload_form = None
+    read_only = None
     key_prefix = ''
     if container_path != ROOT:
         # Find marked container from list.
@@ -173,6 +174,7 @@ def browser(request, path='', template="cloud_browser/browser.html"):
         key_prefix = path[len(container.name)+1:]
 
     if container:
+        datastore = settings.CLOUD_BROWSER_DATASTORE
         key_prefix = key_prefix.rstrip(SEP) + SEP if key_prefix else key_prefix
         # Upload form needs the full url, so we hard code it here. It consists
         # of public domain and upload url. For example:
@@ -192,7 +194,6 @@ def browser(request, path='', template="cloud_browser/browser.html"):
         # specify their own upload form fields, and the *args, **kwargs of
         # get_upload_form() methods vary, so corresponding upload method is
         # called here, except "Filesystem".
-        datastore = settings.CLOUD_BROWSER_DATASTORE
         if datastore == "AWS":
             upload_form = conn.get_upload_form(
                 container_name=container.name,
@@ -205,6 +206,18 @@ def browser(request, path='', template="cloud_browser/browser.html"):
             upload_form = conn.get_upload_form()
         elif datastore == "Rackspace":
             upload_form = conn.get_upload_form()
+
+        # Set the read-only mode and force the non-implemented datastore to
+        # read-only mode. Display the readonly_message if user sets
+        # CLOUD_BROWSER_READ_ONLY as False while file operations are not
+        # implemented.
+        read_only = settings.CLOUD_BROWSER_READ_ONLY
+        if datastore in ["Google", "Rackspace"]:
+            if read_only is False:
+                read_only = True
+                LOGGER.warning(
+                    "{} only supports READ ONLY mode currently.".format(
+                            datastore))
 
         objects = container.filter_objects(objects)
 
@@ -222,7 +235,9 @@ def browser(request, path='', template="cloud_browser/browser.html"):
                    'upload_form': upload_form,
                    'mkdir_action': django.core.urlresolvers.reverse('mkdir'),
                    'delete_action': django.core.urlresolvers.reverse('delete'),
-                   'wd_path': key_prefix})
+                   'wd_path': key_prefix,
+                   'read_only': read_only,
+                   })
 
 
 @settings_view_decorator

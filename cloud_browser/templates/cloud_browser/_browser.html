@@ -26,7 +26,7 @@
 
 <div id="cloud-browser-objects">
 <h2>Objects</h2>
-{% if container%}
+{% if container and not read_only %}
     {% if upload_form %}
         {{ upload_form | safe }}
     {% endif %}
@@ -50,9 +50,11 @@
       <th>Modified by</th>
       <th>Size (Bytes)</th>
       <th>Date</th>
-      <th>Delete</th>
-      <th>Rename</th>
-      <th>Move to ...</th>
+      {% if not read_only %}
+          <th>Delete</th>
+          <th>Rename</th>
+          <th>Move to ...</th>
+      {% endif %}
     </tr>
   </thead>
   <tbody>
@@ -96,35 +98,37 @@
                 {{ obj.last_modified|date:'DATETIME_FORMAT' }}
             {% else %}--{% endif %}
         </td>
-        <td><center>
-            <form id="cloud-browser-delete" class="cloud-browser-form" method="POST" action="{{ delete_action }}" data-confirm="Are you sure to delete this?">
-                {% csrf_token %}
-                <input type="hidden" name="container_name" value="{{ container.name }}">
-                <input type="hidden" name="src_path" value="{{ obj.name }}">
-                <input type="hidden" name="is_file" value="{{ obj.is_file }}">
-                <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/edit-delete.png' %}" alt="Submit">
-            </form>
-        </center></td>
-        <td><center>
-            <form id="cloud-browser-rename" class="cloud-browser-form" method="get" action={% url 'rename' %} >
-                <input type="hidden" name="container_name" value="{{ container.name }}">
-                <input type="hidden" name="src_path" value="{{ obj.name }}">
-                <input type="hidden" name="is_file" value="{{ obj.is_file }}">
-                <input type="hidden" name="wd_path" value="{{ wd_path }}">
-                <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/edit-copy.png' %}" alt="Submit" width="16" height="16">
-            </form>
-        </center></td>
-        <td><center>
-            {% if obj.is_file %}
-                <form id="cloud-browser-move" class="cloud-browser-form" method="get" action={% url 'move' %}>
+        {% if not read_only %}
+            <td><center>
+                <form id="cloud-browser-delete" class="cloud-browser-form" method="POST" action="{{ delete_action }}" data-confirm="Are you sure to delete this?">
+                    {% csrf_token %}
+                    <input type="hidden" name="container_name" value="{{ container.name }}">
+                    <input type="hidden" name="src_path" value="{{ obj.name }}">
+                    <input type="hidden" name="is_file" value="{{ obj.is_file }}">
+                    <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/edit-delete.png' %}" alt="Submit">
+                </form>
+            </center></td>
+            <td><center>
+                <form id="cloud-browser-rename" class="cloud-browser-form" method="get" action={% url 'rename' %} >
                     <input type="hidden" name="container_name" value="{{ container.name }}">
                     <input type="hidden" name="src_path" value="{{ obj.name }}">
                     <input type="hidden" name="is_file" value="{{ obj.is_file }}">
                     <input type="hidden" name="wd_path" value="{{ wd_path }}">
-                    <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/format-indent-more.png' %}" alt="Submit" width="16" height="16">
+                    <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/edit-copy.png' %}" alt="Submit" width="16" height="16">
                 </form>
-            {% else %}--{% endif %}
-        </center></td>
+            </center></td>
+            <td><center>
+                {% if obj.is_file %}
+                    <form id="cloud-browser-move" class="cloud-browser-form" method="get" action={% url 'move' %}>
+                        <input type="hidden" name="container_name" value="{{ container.name }}">
+                        <input type="hidden" name="src_path" value="{{ obj.name }}">
+                        <input type="hidden" name="is_file" value="{{ obj.is_file }}">
+                        <input type="hidden" name="wd_path" value="{{ wd_path }}">
+                        <input type="image" src="{% cloud_browser_media_url 'img/tango/16x16/action/format-indent-more.png' %}" alt="Submit" width="16" height="16">
+                    </form>
+                {% else %}--{% endif %}
+            </center></td>
+        {% endif %}
       </tr>
     {% endfor %}
   </tbody>
