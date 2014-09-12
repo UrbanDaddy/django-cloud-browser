@@ -103,6 +103,52 @@ table#cloud-browser-objects-table tbody a:hover {
     color: #666;
 }
 
+.cloud-browser-messages {
+    font-size: 1.15em;
+    font-style: italic;
+}
+.cloud-browser-messages ul {
+    list-style: none;
+    margin: 15px 0;
+    padding-left: 0;
+}
+.cloud-browser-messages ul li {
+    padding: 0.5em;
+}
+.info,
+.success,
+.warning,
+.error {
+    margin: 10px 0px;
+    padding:0 0 0 40px;
+    background-repeat: no-repeat;
+    background-position: 10px center
+}
+.info {
+    color: #264409;
+    border-color: #C6D880;
+    background-color: #E6EFC2;
+    background-image: url(../img/tango/16x16/status/dialog-information.png);
+}
+.success {
+    color: #00529B;
+    border-color: #789FCC;
+    background-color: #CDEAF7;
+    background-image: url(../img/tango/16x16/status/dialog-information.png);
+}
+.warning {
+    color: #8A1F11;
+    border-color: #FBC2C4;
+    background-color: #FBE3E4;
+    background-image: url(../img/tango/16x16/status/dialog-warning.png);
+}
+.error {
+    color: #514721;
+    border-color: #FFD324;
+    background-color: #FFF6BF;
+    background-image: url(../img/tango/16x16/status/dialog-error.png);
+}
+
 /** Forms */
 form.cloud-browser-form {
     display: inline;

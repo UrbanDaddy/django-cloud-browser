@@ -86,3 +86,58 @@ class MediaUrlNode(Node):
             return reverse("cloud_browser_media",
                            args=[self.rel_path],
                            current_app='cloud_browser')
+
+
+@register.tag(name='cloud_browser_messages')
+def cloud_browser_messages(_, token):
+    """Render the grouped (level, tag) django messages.
+
+    For example::
+
+        <div class="cloud_browser_messages success">
+            <ul class="messages_list_success"><li>Success</li></ul>
+        </div>
+        <div class="cloud_browser_messages warning">
+            <ul class="messages_list_warning"><li>Warning</li></ul>
+        </div>
+    """
+
+    bits = token.split_contents()
+    if len(bits) != 2:
+        raise TemplateSyntaxError("'%s' takes one argument" % bits[0])
+
+    return CloudBrowserMessagesNode(bits[1])
+
+
+class CloudBrowserMessagesNode(Node):
+    """Cloud Browser Messages Node.
+
+    The code is based on:
+    http://mrben.co.uk/entry/a-nicer-way-of-using-the-Django-messages-framework
+    """
+
+    def __init__(self, messages):
+        """Initializer."""
+        super(CloudBrowserMessagesNode, self).__init__()
+        self.messages = messages
+
+    def render(self, context):
+        """Render."""
+        messages = context[self.messages]
+
+        classified_messages = dict()
+        for msg in messages:
+            if (msg.level, msg.tags) in classified_messages:
+                classified_messages[(msg.level, msg.tags)].append(msg.message)
+            else:
+                classified_messages[(msg.level, msg.tags)] = [msg.message]
+
+        messages_template = ""
+        for (level, tag) in sorted(classified_messages.iterkeys()):
+            messages_template += "<div class='cloud-browser-messages {}'>\n \
+            <ul class='messages-list-{}'>".format(tag, tag)
+            for message in classified_messages[(level, tag)]:
+                messages_template += "<li>{}</li>".format(message)
+            messages_template += "</ul>\n</div>\n"
+
+        return messages_template
