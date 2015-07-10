@@ -205,6 +205,12 @@ class Settings(object):
 
         # Static media root.
         'CLOUD_BROWSER_STATIC_MEDIA_DIR': Setting(),
+
+        # File upload cache.
+        'CLOUD_BROWSER_CACHE_SECONDS': Setting(default=60),
+
+        # Read only mode.
+        'CLOUD_BROWSER_READ_ONLY': BoolSetting(default=True),
     }
 
     def __init__(self):
